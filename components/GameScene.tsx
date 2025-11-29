@@ -49,7 +49,7 @@ const SurvivorCharacter: React.FC<{ position: Vector3, rotation?: Euler, isPlaye
             {name && (
                 <Billboard position={[0, 2.5, 0]}>
                     <Text fontSize={0.3} color="white" outlineWidth={0.02} outlineColor="black">
-                        {name}
+                        {String(name)}
                     </Text>
                 </Billboard>
             )}
@@ -147,13 +147,19 @@ const PlaneAbility: React.FC<{ active: boolean }> = ({ active }) => {
 
     return (
         <group ref={group}>
-            {/* Simple Plane Mesh */}
-            <mesh>
-                <coneGeometry args={[2, 10, 8]} />
+            {/* Plane Body */}
+            <mesh rotation={[Math.PI/2, 0, 0]}>
+                <cylinderGeometry args={[0.5, 0.2, 6]} />
                 <meshStandardMaterial color="gray" />
             </mesh>
-            <mesh rotation={[0,0,Math.PI/2]}>
-                <boxGeometry args={[1, 14, 0.5]} />
+            {/* Wings */}
+            <mesh position={[0, 0, 0.5]} rotation={[Math.PI/2, 0, 0]}>
+                <boxGeometry args={[6, 0.1, 2]} />
+                <meshStandardMaterial color="darkgray" />
+            </mesh>
+             {/* Tail */}
+             <mesh position={[0, 0, 2.5]} rotation={[Math.PI/2, 0, 0]}>
+                <boxGeometry args={[2.5, 0.1, 1]} />
                 <meshStandardMaterial color="darkgray" />
             </mesh>
         </group>
@@ -215,9 +221,9 @@ const SynthwaveMap: React.FC = () => {
             <ambientLight intensity={0.2} color={COLORS.synthSkyBottom} />
             <pointLight position={[0, 50, 0]} intensity={1} color={COLORS.synthSun} />
             
-            {/* Reflective Water Floor */}
+            {/* Infinite Reflective Water Floor (Size increased from 200 to 1000) */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
-                <planeGeometry args={[200, 200]} />
+                <planeGeometry args={[1000, 1000]} />
                 <meshStandardMaterial 
                     color={COLORS.synthWater} 
                     roughness={0} 
@@ -330,11 +336,21 @@ const LobbyMap: React.FC = () => {
     )
 }
 
-const DamageIndicator: React.FC<{ data: DamageText }> = ({ data }) => (
-    <group position={data.position}>
-        <Float speed={2} floatIntensity={1}><Billboard><Text fontSize={data.isCrit ? 0.8 : 0.5} color={data.isCrit ? "red" : "white"}>{data.isCrit ? "CRIT!" : ""}{Math.floor(data.damage)}</Text></Billboard></Float>
-    </group>
-);
+const DamageIndicator: React.FC<{ data: DamageText }> = ({ data }) => {
+    // Explicitly cast to string to prevent object-as-child error
+    const textContent = String(`${data.isCrit ? "CRIT!" : ""}${Math.floor(data.damage)}`);
+    return (
+        <group position={data.position}>
+            <Float speed={2} floatIntensity={1}>
+                <Billboard>
+                    <Text fontSize={data.isCrit ? 0.8 : 0.5} color={data.isCrit ? "red" : "white"}>
+                        {textContent}
+                    </Text>
+                </Billboard>
+            </Float>
+        </group>
+    );
+};
 
 // --- GAME LOGIC COMPONENT ---
 
@@ -566,16 +582,10 @@ const GameContent: React.FC<GameContentProps> = ({
                const nextPos = playerPos.current.clone().add(move);
                let collided = false;
                
-               // Cast ray in movement direction to check for buildings
                movementRaycaster.set(playerPos.current.clone().add(new Vector3(0,1,0)), move.clone().normalize());
-               // We need to intersect with structures meshes. Since we don't have refs to them easily here, 
-               // we do a simple distance check against structure positions for now.
-               // A robust system would keep refs or use physics engine.
-               // Simple Logic: If closest structure is within 1 meter, block.
                
                for (const struct of structures.current) {
                    const dist = struct.position.distanceTo(nextPos);
-                   // Treat structures as 4x4 blocks roughly. If inside radius 2.
                    if (dist < 2.5 && Math.abs(struct.position.y - nextPos.y) < 3) {
                        collided = true;
                        break;
@@ -588,7 +598,38 @@ const GameContent: React.FC<GameContentProps> = ({
                }
           }
 
+          // --- VERTICAL COLLISION (Gravity & Ramps) ---
+          let groundY = 0;
+          for (const s of structures.current) {
+               const dx = playerPos.current.x - s.position.x;
+               const dz = playerPos.current.z - s.position.z;
+               const theta = -s.rotation.y;
+               const localX = dx * Math.cos(theta) - dz * Math.sin(theta);
+               const localZ = dx * Math.sin(theta) + dz * Math.cos(theta);
+
+               if (Math.abs(localX) < 2 && Math.abs(localZ) < 2) {
+                   if (s.type === BuildType.FLOOR) {
+                       if (playerPos.current.y >= s.position.y - 0.5) {
+                           groundY = Math.max(groundY, s.position.y);
+                       }
+                   } else if (s.type === BuildType.RAMP) {
+                       const rampHeight = s.position.y - localZ;
+                       if (playerPos.current.y >= rampHeight - 1.0 && playerPos.current.y <= rampHeight + 2.0) {
+                           groundY = Math.max(groundY, rampHeight);
+                       }
+                   }
+               }
+          }
+
           if(!isGrounded.current) playerVel.current.y -= GRAVITY * delta;
+          if(playerPos.current.y <= groundY + 0.2 && playerVel.current.y <= 0) {
+              playerPos.current.y = groundY;
+              playerVel.current.y = 0;
+              isGrounded.current = true;
+          } else {
+              isGrounded.current = false;
+          }
+
           if(isGrounded.current && keys.current[controls.jump]) {
               playerVel.current.y = JUMP_FORCE;
               isGrounded.current = false;
@@ -602,11 +643,8 @@ const GameContent: React.FC<GameContentProps> = ({
 
           // --- PLANE AIRSTRIKE LOGIC ---
           if (planeActive) {
-              if (Date.now() - planeTimer.current > 5000) setPlaneActive(false); // 5s duration
-              
-              // Randomly kill enemies or damage them massively
+              if (Date.now() - planeTimer.current > 5000) setPlaneActive(false); 
               if (Math.random() < 0.1) {
-                  // Spawn explosion bullet
                    const randomEnemy = enemies.current[Math.floor(Math.random() * enemies.current.length)];
                    if (randomEnemy) {
                        randomEnemy.health -= 50;
@@ -660,20 +698,15 @@ const GameContent: React.FC<GameContentProps> = ({
                prev.forEach(b => {
                    const moveStep = b.direction.clone().multiplyScalar(delta);
                    const nextPos = b.position.clone().add(moveStep);
-                   
                    let hit = false;
-                   // Collision with Enemies
                    for(const enemy of enemies.current) {
-                        // Approximate Hitbox
                         const center = enemy.position.clone().add(new Vector3(0, 1.2, 0));
                         if(nextPos.distanceTo(center) < 1.0) {
                             hit = true;
-                            // Apply Damage
                             const isCrit = Math.random() > 0.8;
                             const dmg = isCrit ? b.damage * 2 : b.damage;
                             enemy.health -= dmg;
 
-                            // Spawn Damage Text (We set state here, relying on React 18 batching)
                             setDamageTexts(d => [...d, {
                                 id: Math.random().toString(),
                                 position: enemy.position.clone().add(new Vector3(0, 2.2, 0)),
@@ -683,7 +716,6 @@ const GameContent: React.FC<GameContentProps> = ({
                                 createdAt: Date.now()
                             }]);
 
-                            // Handle Death
                             if(enemy.health <= 0) {
                                 setStats(s => ({...s, kills: s.kills + 1}));
                                 setEnemiesAlive(a => a - 1);
@@ -700,10 +732,8 @@ const GameContent: React.FC<GameContentProps> = ({
                return nextBullets;
           });
           
-          // Cleanup dead enemies
           enemies.current = enemies.current.filter(e => e.health > 0);
           
-          // Enemy Logic
           enemies.current.forEach(e => {
                const dir = playerPos.current.clone().sub(e.position).normalize();
                if(e.position.distanceTo(playerPos.current) > 5) {
@@ -723,7 +753,6 @@ const GameContent: React.FC<GameContentProps> = ({
              gameMode === GameMode.ONE_V_ONE ? <SynthwaveMap /> : <BattleRoyaleMap />
          )}
          
-         {/* Render Plane Ability */}
          <PlaneAbility active={planeActive} />
          
          <SurvivorCharacter position={playerPos.current} rotation={playerRot.current} isPlayer={true} skinColor={playerSkin.color} />
