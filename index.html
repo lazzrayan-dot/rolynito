@@ -39,24 +39,36 @@
         animation: damageFlash 0.3s ease-out;
       }
     </style>
-  <script type="importmap">
+    <!-- Import Maps for direct browser execution without build steps -->
+    <script type="importmap">
 {
   "imports": {
-    "@react-three/fiber": "https://aistudiocdn.com/@react-three/fiber@^9.4.2",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "three": "https://aistudiocdn.com/three@^0.181.2",
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "three": "https://esm.sh/three@0.160.0",
+    "@react-three/fiber": "https://esm.sh/@react-three/fiber@8.15.14?external=react,react-dom,three",
+    "@react-three/drei": "https://esm.sh/@react-three/drei@9.96.1?external=react,react-dom,three,@react-three/fiber",
+    "uuid": "https://esm.sh/uuid@9.0.1",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "@react-three/drei": "https://aistudiocdn.com/@react-three/drei@^10.7.7",
-    "postprocessing": "https://aistudiocdn.com/postprocessing@^6.36.0",
-    "@react-three/postprocessing": "https://aistudiocdn.com/@react-three/postprocessing@^2.16.2"
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "vite": "https://aistudiocdn.com/vite@^7.2.4",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1"
   }
 }
 </script>
-</head>
+    <!-- Load Babel for in-browser JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
   <body>
     <div id="root"></div>
-    <!-- CRITICAL FIX: Entry point for the React App -->
-    <script type="module" src="./index.tsx"></script>
+    
+    <!-- Load scripts with type="text/babel" for runtime compilation -->
+    <script type="text/babel" data-type="module" src="./types.ts"></script>
+    <script type="text/babel" data-type="module" src="./constants.ts"></script>
+    <script type="text/babel" data-type="module" src="./components/GameUI.tsx"></script>
+    <script type="text/babel" data-type="module" src="./components/GameScene.tsx"></script>
+    <script type="text/babel" data-type="module" src="./components/Menu.tsx"></script>
+    <script type="text/babel" data-type="module" src="./App.tsx"></script>
+    <script type="text/babel" data-type="module" src="./index.tsx"></script>
   </body>
 </html>
